@@ -1,0 +1,375 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------------------------------------
+// 1. Core Hierarchy: Team -> Club
+// ------------------------------------------------------
+
+model Team {
+  id          String    @id // E.g. "FAJR", "TEAM_X"
+  name        String    // E.g. "تیم فجر", "تیم X"
+  adminUserId String?
+  status      String    @default("ACTIVE")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  clubs       Club[]
+  users       User[]
+  students    Student[]
+}
+
+model Club {
+  id                   String        @id // E.g. "PARTO", "SARVESTAN", "HEJAB", "CLUB_X1", "CLUB_X2"
+  teamId               String
+  team                 Team          @relation(fields: [teamId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  name                 String        // E.g. "باشگاه پرتو", "باشگاه سروستان", "باشگاه حجاب"
+  coachName            String        @default("مربی باشگاه")
+  phone                String?       @default("۰۲۱۲۲۳۳۴۴۵۵")
+  mainDiscipline       String        @default("tkd") // tkd, karate, bjj, judo
+  passingScore         Int           @default(75)
+  evaluationPeriodDays Int           @default(30)
+  status               String        @default("ACTIVE")
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  students             Student[]
+  competitions         Competition[]
+  beltConfigs          BeltConfig[]
+}
+
+// ------------------------------------------------------
+// 2. Authentication & Roles (SUPER_ADMIN, TEAM_ADMIN, USER)
+// ------------------------------------------------------
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("TEAM_ADMIN") // SUPER_ADMIN, TEAM_ADMIN, USER
+  teamId    String?  // Mandatory for TEAM_ADMIN and USER, null for SUPER_ADMIN
+  team      Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ------------------------------------------------------
+// 3. Student (Player) & Skills
+// ------------------------------------------------------
+
+model Student {
+  id                String                 @id // E.g. "1024"
+  studentNumber     String                 @unique // E.g. "۱۰۲۴"
+  name              String
+  age               Int
+  belt              String                 // سفید, زرد, سبز, آبی, قرمز, مشکی
+  targetBelt        String?
+  className         String                 @default("کلاس نوجوانان")
+  mobile            String?
+  parentName        String?
+  parentMobile      String?
+  joinedAt          String?                // E.g. "۱۰ اردیبهشت ۱۴۰۳"
+  experience        String?                // E.g. "۲ سال و ۴ ماه"
+  avatar            String                 @default("ع")
+  avatarColor       String                 @default("from-cyan-500 to-blue-600")
+  color             String                 @default("bg-cyan-500")
+  status            String                 @default("فعال") // فعال, آماده ارتقا, نیازمند تمرین
+  attendanceRate    Int                    @default(85)
+  overallScore      Int                    @default(75)
+  medalsCount       Int                    @default(0)
+  competitionsCount Int                    @default(0)
+
+  teamId            String?
+  team              Team?                  @relation(fields: [teamId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  clubId            String?
+  club              Club?                  @relation(fields: [clubId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  skills            StudentSkill[]
+  assessments       Assessment[]
+  promotions        PromotionHistory[]
+  attendanceLogs    AttendanceRecord[]
+  notes             StudentNote[]
+  participations    CompetitionParticipant[]
+  medals            MedalWinner[]
+
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+}
+
+model StudentSkill {
+  id        String   @id @default(uuid())
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  name      String   // E.g. "آپ چاگی", "دفاع", "انعطاف‌پذیری"
+  category  String   // تکنیک‌ها, فرم, مبارزه, آمادگی جسمانی
+  score     Int      @default(70)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, name])
+}
+
+// ------------------------------------------------------
+// 4. Assessment Module & Workouts
+// ------------------------------------------------------
+
+model Assessment {
+  id              String   @id // E.g. "asm-101"
+  studentId       String
+  student         Student  @relation(fields: [studentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  type            String   // ارزیابی کمربند, ارزیابی مهارتهای فنی, ارزیابی مبارزه, ارزیابی آمادگی جسمانی
+  belt            String
+  score           Int
+  dateText        String   // E.g. "۱۲ شهریور ۱۴۰۵"
+  evaluator       String   @default("مربی امینی")
+  status          String   @default("تکمیل شده") // تکمیل شده, در حال بررسی, نیازمند توجه, آماده ارتقا
+  categoryScores  String   // JSON string: Record<string, number>
+  skillsData      String   // JSON string: Array<{ name: string; score: number; category: string }>
+  notes           String   @default("")
+  beltReadiness   Int      @default(75)
+  recommendations String   // JSON string: { focusSkills: string[]; text: string; strengths: string[] }
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Workout {
+  id          String   @id @default(uuid())
+  teamId      String
+  clubId      String?
+  title       String
+  groupName   String   @default("نوجوانان")
+  dateText    String
+  timeText    String   @default("۱۸:۰۰")
+  durationMin Int      @default(90)
+  focusArea   String   @default("فرم و مبارزه")
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ------------------------------------------------------
+// 5. Tasks & Finance
+// ------------------------------------------------------
+
+model Task {
+  id          String   @id @default(uuid())
+  teamId      String
+  clubId      String?
+  title       String
+  description String?
+  dueDate     String?
+  status      String   @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED
+  priority    String   @default("MEDIUM")  // LOW, MEDIUM, HIGH
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Finance {
+  id          String   @id @default(uuid())
+  teamId      String
+  clubId      String?
+  title       String
+  amount      Float
+  type        String   // INCOME, EXPENSE
+  category    String   // شهریه, مسابقات, تجهیزات, اجاره سالن
+  dateText    String
+  paidBy      String?
+  status      String   @default("COMPLETED")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ------------------------------------------------------
+// 6. Belt Progression & Roadmaps
+// ------------------------------------------------------
+
+model BeltConfig {
+  id                   String   @id // E.g. "belt-blue"
+  discipline           String   @default("taekwondo") // taekwondo, karate, bjj
+  name                 String   // سفید, زرد, سبز, آبی, قرمز, مشکی
+  order                Int
+  color                String   // Hex color
+  bgColor              String   // Tailwind class
+  textColor            String   // Tailwind class
+  borderColor          String   // Tailwind class
+  dotColor             String   // Tailwind class
+  minimumOverallScore  Int      @default(70)
+  categoryRequirements String   // JSON string: Array<{ category: string; minimumScore: number }>
+  skillRequirements    String   // JSON string: Array<{ id: string; category: string; name: string; minimumScore: number; description?: string }>
+
+  clubId               String?
+  club                 Club?    @relation(fields: [clubId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model PromotionHistory {
+  id        String   @id @default(uuid())
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  beltName  String   // کمربند آبی
+  dateText  String   // ۱۲ فروردین ۱۴۰۵
+  evaluator String   @default("مربی امینی")
+  score     Int?     @default(80)
+
+  createdAt DateTime @default(now())
+}
+
+// ------------------------------------------------------
+// 7. Competition & Tournaments
+// ------------------------------------------------------
+
+model Competition {
+  id                String                   @id // E.g. "comp-101"
+  title             String
+  dateText          String                   // E.g. "۲۵ شهریور ۱۴۰۵"
+  location          String
+  description       String
+  type              String                   @default("درون باشگاهی") // درون باشگاهی, بین باشگاهی, استانی
+  status            String                   @default("ثبت‌نام در حال انجام") // پیش‌رو, ثبت‌نام در حال انجام, در حال برگزاری, به پایان رسیده
+  participantsCount Int                      @default(0)
+
+  clubId            String?
+  club              Club?                    @relation(fields: [clubId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  categories        CompetitionCategory[]
+  participants      CompetitionParticipant[]
+  matches           Match[]
+  medals            MedalWinner[]
+
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+}
+
+model CompetitionCategory {
+  id                String                   @id // E.g. "cat-1"
+  competitionId     String
+  competition       Competition              @relation(fields: [competitionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  title             String                   // نوجوانان پسر - ۴۵ تا ۵۵ کیلو
+  ageGroup          String                   // نونهالان, نوجوانان, جوانان, بزرگسالان
+  gender            String                   // مردان, زنان
+  weight            String                   // ۴۵ تا ۵۵ کیلو
+  participantsCount Int                      @default(0)
+
+  participants      CompetitionParticipant[]
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+}
+
+model CompetitionParticipant {
+  id            String               @id // E.g. "cp-1"
+  competitionId String
+  competition   Competition          @relation(fields: [competitionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  studentId     String
+  student       Student              @relation(fields: [studentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  categoryId    String?
+  category      CompetitionCategory? @relation(fields: [categoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  name          String
+  age           Int
+  belt          String
+  weight        Float                // in kg
+  ageGroup      String
+  gender        String
+  status        String               @default("تأیید شده") // تأیید شده, در انتظار وزن‌کشی, وزن‌کشی شده, انصراف
+  avatar        String?
+
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+}
+
+model Match {
+  id            String      @id // E.g. "m-1"
+  competitionId String
+  competition   Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  roundTitle    String      // E.g. "مرحله اول", "فینال مسابقات"
+  roundIndex    Int         // 1, 2, 3...
+  matchNumber   Int
+  participant1  String?     // JSON string: MatchParticipant
+  participant2  String?     // JSON string: MatchParticipant
+  winnerId      String?
+  score1        Int         @default(0)
+  score2        Int         @default(0)
+  status        String      @default("پایان یافته") // در انتظار, در حال برگزاری, پایان یافته
+  timeText      String      @default("پایان مسابقه")
+  nextMatchId   String?
+  nextMatchSlot Int?        // 1 or 2
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model MedalWinner {
+  id            String      @id @default(uuid())
+  competitionId String
+  competition   Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  studentId     String
+  student       Student     @relation(fields: [studentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  rank          Int         // 1, 2, 3
+  medalType     String      // طلا, نقره, برنز
+  studentName   String
+  belt          String
+  categoryTitle String
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+// ------------------------------------------------------
+// 8. Attendance & Notes
+// ------------------------------------------------------
+
+model AttendanceRecord {
+  id        String   @id @default(uuid())
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  title     String   // تمرین مبارزه و دفاع
+  dateText  String   // ۱۴ شهریور ۱۴۰۵
+  timeText  String   @default("۱۶:۰۰")
+  status    String   // حاضر, تاخیر, غیبت موجه, غیبت غیرموجه
+  note      String?  // توضیحات مربی
+
+  createdAt DateTime @default(now())
+}
+
+model StudentNote {
+  id        String   @id @default(uuid())
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  title     String
+  content   String
+  author    String   @default("مربی امینی")
+  category  String   @default("فنی و مبارزه")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ------------------------------------------------------
+// 9. Activity & Notification Feeds
+// ------------------------------------------------------
+
+model Activity {
+  id        String   @id @default(uuid())
+  text      String
+  timeText  String
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  title     String
+  timeText  String
+  isRead    Boolean  @default(false)
+  type      String   @default("info")
+  createdAt DateTime @default(now())
+}
