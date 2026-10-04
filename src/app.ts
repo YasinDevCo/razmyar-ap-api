@@ -26,8 +26,12 @@ export function createApp(): Express {
           return callback(null, true)
         }
 
-        // Check if origin is explicitly allowed
-        if (configuredOrigins.includes(origin)) {
+        // Check if origin is explicitly allowed, wildcard is enabled, or is a Vercel domain
+        if (
+          configuredOrigins.includes('*') ||
+          configuredOrigins.includes(origin) ||
+          origin.endsWith('.vercel.app')
+        ) {
           return callback(null, true)
         }
 
